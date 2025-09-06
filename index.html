@@ -9,10 +9,22 @@
   <body>
     <div id="hud">
       <h1>Đi ngang</h1>
-      <p>Phím: ←/A, →/D để chạy • Space/↑ để nhảy • J/F để bắn • R để chơi lại</p>
+      <p>Phím: →/D để chạy • J/F hoặc Space để bắn • R để chơi lại • Tự chạy mặc định: Bật • Nút: →, Bắn, Bắn 2, Tự bắn, Tự chạy, Thường, Khó, Trùm</p>
     </div>
 
     <canvas id="game" width="960" height="540"></canvas>
+
+    <div id="controls">
+      <button id="btn-right" class="ctl round" aria-label="Đi thẳng">→</button>
+      <button id="btn-shoot" class="ctl" aria-label="Bắn">Bắn</button>
+      <button id="btn-shoot2" class="ctl" aria-label="Bắn 2">Bắn 2</button>
+      <button id="btn-auto-shoot" class="ctl toggle" aria-pressed="false">Tự bắn: Tắt</button>
+      <button id="btn-auto-run" class="ctl toggle" aria-pressed="false">Tự chạy: Tắt</button>
+      <button id="btn-mode-normal" class="ctl toggle" aria-pressed="false">Thường</button>
+      <button id="btn-mode-hard" class="ctl toggle" aria-pressed="false">Khó</button>
+      <button id="btn-mode-boss" class="ctl toggle" aria-pressed="false">Trùm</button>
+      <button id="btn-restart" class="ctl primary" hidden>Chơi lại</button>
+    </div>
 
     <script src="game.js"></script>
   </body>

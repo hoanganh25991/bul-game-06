@@ -36,7 +36,7 @@ const WORLD_W = LEVEL_W * TILE;
 const WORLD_H = LEVEL_H * TILE;
 
 const GRAVITY = 2400;
-const MOVE_MAX = 300;
+const MOVE_MAX = 200;
 const ACCEL_GROUND = 2000;
 const ACCEL_AIR = 1200;
 const FRICTION_GROUND = 2100;
@@ -52,8 +52,6 @@ const BULLET_LIFETIME = 1.4;
 const ENEMY_SPEED = 90;
 const SLASH_RANGE = 34;
 const SLASH_COOLDOWN = 0.9;
-const ENEMY_JUMP_VEL = 780;
-const ENEMY_JUMP_COOLDOWN = 0.6;
 const PLAYER_MAX_HP = 3;
 const PLAYER_IFRAMES = 0.7;
 
@@ -71,8 +69,8 @@ const keys = {
 const KeyMap = {
   Left: ["ArrowLeft", "a", "A"],
   Right: ["ArrowRight", "d", "D"],
-  Jump: [" ", "Space", "ArrowUp", "w", "W"],
-  Shoot: ["j", "J", "f", "F"],
+  Jump: ["ArrowUp", "w", "W"],
+  Shoot: ["j", "J", "f", "F", " ", "Space"],
   Restart: ["r", "R"],
 };
 function onKey(e, down) {
@@ -152,6 +150,11 @@ let camX = 0;
 let lastFrame = performance.now();
 let timeNow = 0;
 
+// Game state
+let gameState = "playing";
+const GOAL_COL = LEVEL_W - 6;
+const GOAL_X = GOAL_COL * TILE + TILE * 0.5;
+
 // HUD dynamic info
 const hud = document.getElementById("hud");
 const hudInfo = document.createElement("div");
@@ -159,6 +162,132 @@ hudInfo.style.marginTop = "6px";
 hudInfo.style.fontSize = "12px";
 hudInfo.style.opacity = "0.95";
 hud.appendChild(hudInfo);
+
+// Controls UI
+const btnRight = document.getElementById("btn-right");
+const btnShoot = document.getElementById("btn-shoot");
+const btnShoot2 = document.getElementById("btn-shoot2");
+const btnAutoShoot = document.getElementById("btn-auto-shoot");
+const btnAutoRun = document.getElementById("btn-auto-run");
+const btnRestart = document.getElementById("btn-restart");
+const btnModeNormal = document.getElementById("btn-mode-normal");
+const btnModeHard = document.getElementById("btn-mode-hard");
+const btnModeBoss = document.getElementById("btn-mode-boss");
+
+let difficulty = "normal";
+let enemySpeed = 90;
+
+function updateModeUI() {
+  if (btnModeNormal) btnModeNormal.setAttribute("aria-pressed", difficulty === "normal" ? "true" : "false");
+  if (btnModeHard) btnModeHard.setAttribute("aria-pressed", difficulty === "hard" ? "true" : "false");
+  if (btnModeBoss) btnModeBoss.setAttribute("aria-pressed", difficulty === "boss" ? "true" : "false");
+}
+
+let autoShoot = false;
+let autoRun = true;
+
+function setRestartVisible(v) {
+  if (!btnRestart) return;
+  btnRestart.hidden = !v;
+}
+
+function updateToggleUI() {
+  if (btnAutoShoot) {
+    btnAutoShoot.setAttribute("aria-pressed", autoShoot ? "true" : "false");
+    btnAutoShoot.textContent = `Tự bắn: ${autoShoot ? "Bật" : "Tắt"}`;
+  }
+  if (btnAutoRun) {
+    btnAutoRun.setAttribute("aria-pressed", autoRun ? "true" : "false");
+    btnAutoRun.textContent = `Tự chạy: ${autoRun ? "Bật" : "Tắt"}`;
+  }
+}
+
+// Right button hold to move forward
+if (btnRight) {
+  const press = () => { keys.right = true; };
+  const release = () => { keys.right = false; };
+  btnRight.addEventListener("pointerdown", (e) => { press(); e.preventDefault(); });
+  window.addEventListener("pointerup", release);
+  btnRight.addEventListener("pointerleave", release);
+}
+
+// Shoot button single shot
+if (btnShoot) {
+  btnShoot.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (gameState !== "playing") return;
+    if (timeNow - player.lastShotAt >= SHOOT_COOLDOWN) {
+      shootBullet();
+    }
+  });
+}
+if (btnShoot2) {
+  btnShoot2.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (gameState !== "playing") return;
+    if (timeNow - player.lastShotAt >= SHOOT_COOLDOWN) {
+      shootBullet();
+    }
+  });
+}
+
+// Toggles
+if (btnAutoShoot) {
+  btnAutoShoot.addEventListener("click", (e) => {
+    e.preventDefault();
+    autoShoot = !autoShoot;
+    updateToggleUI();
+  });
+}
+if (btnAutoRun) {
+  btnAutoRun.addEventListener("click", (e) => {
+    e.preventDefault();
+    autoRun = !autoRun;
+    updateToggleUI();
+  });
+}
+
+// Mode buttons
+if (btnModeNormal) {
+  btnModeNormal.addEventListener("click", (e) => {
+    e.preventDefault();
+    difficulty = "normal";
+    enemySpeed = 90;
+    updateModeUI();
+    restart();
+  });
+}
+if (btnModeHard) {
+  btnModeHard.addEventListener("click", (e) => {
+    e.preventDefault();
+    difficulty = "hard";
+    enemySpeed = 120;
+    updateModeUI();
+    restart();
+  });
+}
+if (btnModeBoss) {
+  btnModeBoss.addEventListener("click", (e) => {
+    e.preventDefault();
+    difficulty = "boss";
+    enemySpeed = 0;
+    updateModeUI();
+    restart();
+  });
+}
+
+// Restart button
+if (btnRestart) {
+  btnRestart.addEventListener("click", (e) => {
+    e.preventDefault();
+    restart();
+    setRestartVisible(false);
+  });
+}
+
+updateToggleUI();
+updateModeUI();
+setRestartVisible(false);
 
 // Main loop
 requestAnimationFrame(loop);
@@ -185,16 +314,21 @@ function restart() {
   resetPlayerToStart();
   bullets.length = 0;
   enemies.length = 0;
-  spawnSwordLine();
+  if (difficulty === "boss") {
+    spawnBoss();
+  } else {
+    const count = difficulty === "hard" ? 60 : 40;
+    const spacing = difficulty === "hard" ? 34 : 36;
+    spawnSwordLine(count, spacing);
+  }
   camX = 0;
+  gameState = "playing";
+  setRestartVisible(false);
   keys.restart = false;
 }
 
-function spawnSwordLine() {
+function spawnSwordLine(count = 40, spacing = 36, startX = TILE * 18) {
   // Spawn a line of sword enemies ahead
-  const count = 10;
-  const startX = TILE * 22;
-  const spacing = 80;
   for (let i = 0; i < count; i++) {
     const ex = startX + i * spacing;
     const groundY = groundTopAtX(ex);
@@ -209,11 +343,30 @@ function spawnSwordLine() {
       onGround: false,
       facing: -1,
       slashCD: 0,
-      jumpCD: 0,
       alive: true,
     };
     enemies.push(e);
   }
+}
+
+function spawnBoss() {
+  const ex = TILE * 26;
+  const groundY = groundTopAtX(ex);
+  const e = {
+    type: "boss",
+    x: ex,
+    y: groundY - 80,
+    w: 64,
+    h: 80,
+    vx: 0,
+    vy: 0,
+    onGround: false,
+    facing: -1,
+    slashCD: 0,
+    alive: true,
+    hp: 100,
+  };
+  enemies.push(e);
 }
 
 // Create a side-scrolling level with ground, gaps, and some platforms
@@ -228,59 +381,9 @@ function createLevel() {
     solid[LEVEL_H - 2][c] = true;
   }
 
-  // Carve occasional gaps in ground
-  // Ensure gaps are not too close, not too wide
-  let c = 10;
-  while (c < LEVEL_W - 20) {
-    if (rng() < 0.14) {
-      const gapW = 2 + Math.floor(rng() * 3); // 2..4 tiles
-      for (let gc = 0; gc < gapW && c + gc < LEVEL_W - 12; gc++) {
-        solid[LEVEL_H - 1][c + gc] = false;
-        solid[LEVEL_H - 2][c + gc] = false;
-      }
-      // add a rescue platform above some gaps
-      if (rng() < 0.6) {
-        const platRow = LEVEL_H - 4 - Math.floor(rng() * 2); // above ground
-        const start = c - 1;
-        const w = gapW + 2;
-        for (let pc = 0; pc < w; pc++) {
-          setSolid(platRow, start + pc, true);
-        }
-      }
-      c += gapW + 6 + Math.floor(rng() * 6);
-    } else {
-      c += 3 + Math.floor(rng() * 6);
-    }
-  }
 
-  // Add some simple stairs and platforms along the way
-  for (let i = 0; i < 25; i++) {
-    const base = 12 + Math.floor(rng() * (LEVEL_W - 24));
-    const height = 1 + Math.floor(rng() * 3);
-    const width = 2 + Math.floor(rng() * 5);
-    for (let w = 0; w < width; w++) {
-      for (let h = 0; h < height; h++) {
-        const row = LEVEL_H - 3 - h;
-        const col = base + w;
-        setSolid(row, col, true);
-      }
-    }
-  }
 
-  // Floating platforms
-  for (let i = 0; i < 30; i++) {
-    const row = 3 + Math.floor(rng() * (LEVEL_H - 6));
-    const col = 12 + Math.floor(rng() * (LEVEL_W - 24));
-    const width = 2 + Math.floor(rng() * 3);
-    for (let w = 0; w < width; w++) {
-      setSolid(row, col + w, true);
-    }
-  }
 
-  // Create an ending platform and flag base near end
-  for (let w = 0; w < 8; w++) {
-    setSolid(LEVEL_H - 3, LEVEL_W - 6 + (w - 4), true);
-  }
 
   function setSolid(r, c, val) {
     if (r >= 0 && r < LEVEL_H && c >= 0 && c < LEVEL_W) {
@@ -307,14 +410,22 @@ function resetPlayerToStart() {
 
 // MAIN UPDATE
 function update(dt) {
+  // End states: show message, wait for restart
+  if (gameState !== "playing") {
+    const msg = gameState === "win" ? "Chiến thắng! Bạn đã hoàn thành nhiệm vụ" : "Thất bại";
+    hudInfo.textContent = `${msg} • R: chơi lại`;
+    setRestartVisible(true);
+    return;
+  }
+
   // Input horizontal movement
-  const wantDir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const wantDir = (keys.right || autoRun) ? 1 : 0;
   const accel = player.onGround ? ACCEL_GROUND : ACCEL_AIR;
   const friction = player.onGround ? FRICTION_GROUND : FRICTION_AIR;
 
   if (wantDir !== 0) {
-    player.vx += wantDir * accel * dt;
-    player.facing = wantDir;
+    player.vx += accel * dt;
+    player.facing = 1;
   } else {
     // apply friction to slow down
     const s = Math.sign(player.vx);
@@ -323,7 +434,7 @@ function update(dt) {
   }
 
   // clamp horizontal speed
-  player.vx = clamp(player.vx, -MOVE_MAX, MOVE_MAX);
+  player.vx = clamp(player.vx, 0, MOVE_MAX);
 
   // Jump buffer + coyote time
   if (player.onGround) {
@@ -332,9 +443,7 @@ function update(dt) {
     player.coyote = Math.max(0, player.coyote - dt);
   }
 
-  const canJump =
-    (timeNow - keys.jumpPressedAt) <= JUMP_BUFFER &&
-    (player.onGround || player.coyote > 0);
+  const canJump = false;
 
   if (canJump) {
     player.vy = -JUMP_VEL;
@@ -359,8 +468,18 @@ function update(dt) {
   player.onGround = false;
   moveAndCollide(player, dt);
 
+  // Win condition: pass the flag
+  const playerCenter = player.x + player.w / 2;
+  if (playerCenter > GOAL_X + 6 && difficulty !== "boss") {
+    gameState = "win";
+    // freeze entities
+    player.vx = 0; player.vy = 0;
+    for (const e of enemies) { e.vx = 0; e.vy = 0; }
+    setRestartVisible(true);
+  }
+
   // Shooting
-  if (keys.shoot && timeNow - player.lastShotAt >= SHOOT_COOLDOWN) {
+  if ((keys.shoot || autoShoot) && timeNow - player.lastShotAt >= SHOOT_COOLDOWN) {
     shootBullet();
   }
 
@@ -384,9 +503,16 @@ function update(dt) {
     for (const e of enemies) {
       if (!e.alive) continue;
       if (aabb(b.x, b.y, b.w, b.h, e.x, e.y, e.w, e.h)) {
-        // bullet kills sword enemy instantly
+        // bullet hits
         if (e.type === "sword") {
           e.alive = false;
+        } else if (e.type === "boss") {
+          e.hp = (e.hp ?? 100) - 3;
+          if (e.hp <= 0) {
+            e.alive = false;
+            gameState = "win";
+            setRestartVisible(true);
+          }
         }
         b.dead = true;
         break;
@@ -403,35 +529,23 @@ function update(dt) {
     if (!e.alive) continue;
 
     // simple chase AI when close horizontally
-    const dx = (player.x + player.w / 2) - (e.x + e.w / 2);
-    if (Math.abs(dx) < 600) {
-      const dir = Math.sign(dx) || 1;
-      e.vx = dir * ENEMY_SPEED;
-      e.facing = dir;
-    } else {
+    if (e.type === "boss") {
       e.vx = 0;
-    }
-
-    // jump AI: obstacles, gaps, or player above
-    if (e.jumpCD > 0) e.jumpCD -= dt;
-    if (e.onGround && e.jumpCD <= 0) {
-      const dirSign = e.facing >= 0 ? 1 : -1;
-      const frontX = e.x + (dirSign === 1 ? e.w + 2 : -2);
-      const footY = e.y + e.h - 1;
-      const chestY = e.y + e.h - 20;
-      const colAhead = Math.floor(frontX / TILE);
-      const rowFoot = Math.floor(footY / TILE);
-      const rowChest = Math.floor(chestY / TILE);
-      const wallAhead = isSolid(rowChest, colAhead);
-      const gapAhead = !isSolid(rowFoot + 1, colAhead);
-      const playerAbove = (player.y + player.h / 2) < (e.y + e.h / 2) && Math.abs(dx) < 120;
-
-      if (wallAhead || gapAhead || playerAbove) {
-        e.vy = -ENEMY_JUMP_VEL;
-        e.onGround = false;
-        e.jumpCD = ENEMY_JUMP_COOLDOWN;
+    } else {
+      const dx = (player.x + player.w / 2) - (e.x + e.w / 2);
+      if (Math.abs(dx) < 600) {
+        if (dx > 0) {
+          e.vx = enemySpeed;
+          e.facing = 1;
+        } else {
+          e.vx = 0;
+          e.facing = 1;
+        }
+      } else {
+        e.vx = 0;
       }
     }
+
 
     // gravity
     e.vy += GRAVITY * dt;
@@ -468,31 +582,37 @@ function update(dt) {
   // i-frames tick
   if (player.invuln > 0) player.invuln -= dt;
 
+  // Enforce no backward movement
+  player.vx = clamp(player.vx, 0, MOVE_MAX);
+
   // Update camera follow (centered with slight forward offset)
-  const forward = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const forward = ((keys.right || autoRun) ? 1 : 0) - (keys.left ? 1 : 0);
   const targetCam =
     player.x + player.w / 2 - canvas.width / DPR / 2 + forward * 80;
   camX += (targetCam - camX) * 0.12;
   camX = clamp(camX, 0, WORLD_W - canvas.width / DPR);
 
-  // Fail-safe: if falls out of world, restart to last safe spot
+  // Fail-safe: falling out of world -> defeat
   if (player.y > WORLD_H + 200) {
-    resetPlayerToStart();
-    camX = clamp(player.x - canvas.width / DPR / 2, 0, WORLD_W - canvas.width / DPR);
-    bullets.length = 0;
+    gameState = "lose";
+    player.vx = 0; player.vy = 0;
+    for (const e of enemies) { e.vx = 0; e.vy = 0; }
+    setRestartVisible(true);
   }
 
   // HUD info
-  const dist = Math.max(0, Math.floor((player.x / WORLD_W) * 100));
+  const dist = 23;
   const hp = Math.max(0, player.hp);
   const remain = enemies.length;
-  hudInfo.textContent = `Tiến độ: ${dist}% • Máu: ${hp}/${PLAYER_MAX_HP} • Địch còn: ${remain} • Vị trí: ${Math.floor(
-    player.x
-  )}, ${Math.floor(player.y)} • R: chơi lại`;
+  const boss = enemies.find(e => e.alive && e.type === "boss");
+  hudInfo.textContent = `Tiến độ: ${dist}% • HP: ${hp}/${PLAYER_MAX_HP}${boss ? ` • Boss: ${Math.max(0, boss.hp)}/100` : ""} • Địch còn: ${remain} • Vị trí: ${Math.floor(player.x)}, ${Math.floor(player.y)} • R: chơi lại`;
 
-  // death
+  // death -> defeat state
   if (player.hp <= 0) {
-    restart();
+    gameState = "lose";
+    player.vx = 0; player.vy = 0;
+    for (const e of enemies) { e.vx = 0; e.vy = 0; }
+    setRestartVisible(true);
   }
 }
 
@@ -581,11 +701,61 @@ function draw() {
   // Draw enemies
   for (const e of enemies) {
     if (!e.alive) continue;
-    drawSwordEnemy(e);
+    if (e.type === "boss") drawBoss(e);
+    else drawSwordEnemy(e);
   }
 
   // Draw player soldier
   drawPlayer();
+
+  // UI overlay
+  drawHPBar();
+
+  // End overlay
+  if (gameState !== "playing") {
+    drawEndOverlay();
+  }
+}
+
+function drawHPBar() {
+  const x = 16, y = 16;
+  const bw = 14, bh = 120;
+  // container background
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(x - 4, y - 14, bw + 8, bh + 24);
+  // label
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("HP", x - 2, y - 18);
+  // border
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, bw, bh);
+  // fill
+  const ratio = Math.max(0, Math.min(1, player.hp / PLAYER_MAX_HP));
+  const fillH = Math.floor(bh * ratio);
+  if (fillH > 2) {
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(x + 1, y + (bh - fillH) + 1, bw - 2, fillH - 2);
+  }
+}
+
+function drawEndOverlay() {
+  const W = canvas.width / DPR;
+  const H = canvas.height / DPR;
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 24px sans-serif";
+  const msg = gameState === "win" ? "Chiến thắng! Bạn đã hoàn thành nhiệm vụ" : "Thất bại";
+  const metrics = ctx.measureText(msg);
+  const x = Math.floor((W - metrics.width) / 2);
+  const y = Math.floor(H / 2);
+  ctx.fillText(msg, x, y);
+  ctx.font = "16px sans-serif";
+  const sub = "Nhấn R để chơi lại";
+  const m2 = ctx.measureText(sub);
+  ctx.fillText(sub, Math.floor((W - m2.width) / 2), y + 28);
 }
 
 function drawPlayer() {
@@ -715,6 +885,47 @@ function drawSwordEnemy(e) {
     const swing = e.slashCD > SLASH_COOLDOWN - 0.15 ? 6 : 0;
     ctx.fillRect(ex - 20, ey + 12 - swing, 18, 3);
   }
+}
+
+function drawBoss(e) {
+  const ex = Math.floor(e.x - camX);
+  const ey = Math.floor(e.y);
+
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(ex + e.w / 2, ey + e.h, 24, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // torso/body
+  ctx.fillStyle = "#7f1d1d";
+  ctx.fillRect(ex + 8, ey + 20, e.w - 16, e.h - 28);
+
+  // chest plate
+  ctx.fillStyle = "#b91c1c";
+  ctx.fillRect(ex + 6, ey + 16, e.w - 12, 10);
+
+  // head
+  ctx.fillStyle = "#f1c27d";
+  ctx.fillRect(ex + 14, ey, e.w - 28, 20);
+
+  // eyes
+  ctx.fillStyle = "#111";
+  ctx.fillRect(ex + Math.floor(e.w / 2) - 10, ey + 7, 4, 4);
+  ctx.fillRect(ex + Math.floor(e.w / 2) + 6, ey + 7, 4, 4);
+
+  // boss HP bar on top of boss
+  const maxHp = 100;
+  const hp = Math.max(0, Math.min(maxHp, e.hp ?? maxHp));
+  const bw = e.w;
+  const bh = 6;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(ex, ey - 12, bw, bh);
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(ex, ey - 12, Math.floor((hp / maxHp) * bw), bh);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ex, ey - 12, bw, bh);
 }
 
 // Physics and collisions
